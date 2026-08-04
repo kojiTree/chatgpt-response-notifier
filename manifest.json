@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "ChatGPT Response Notifier",
+  "version": "0.8.0",
+  "description": "Notifies you with desktop alerts, an optional chime, and a persistent tab marker when ChatGPT finishes a response or needs approval.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "notifications",
+    "storage",
+    "tabs",
+    "scripting",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "detector-core.js",
+        "page-utils.js",
+        "dom-adapter.js",
+        "tab-marker.js",
+        "content-script.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "ChatGPT Response Notifier",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

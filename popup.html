@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ChatGPT Notifier</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>ChatGPT Notifier</h1>
+          <p>Desktop, tab, and sound alerts · v0.8</p>
+        </div>
+      </header>
+
+      <section class="status-grid" aria-label="Status">
+        <div>
+          <span>Notifications</span>
+          <strong id="permission">Checking…</strong>
+        </div>
+        <div>
+          <span>ChatGPT tabs</span>
+          <strong id="monitored-tabs">Checking…</strong>
+        </div>
+      </section>
+
+
+      <section class="settings-card" aria-label="Alert settings">
+        <div class="setting-row">
+          <div>
+            <span>Desktop notification</span>
+            <strong>Show a 10-second Chrome alert</strong>
+          </div>
+          <label class="switch" title="Enable or disable desktop notifications">
+            <input id="enabled" type="checkbox" />
+            <span aria-hidden="true"></span>
+          </label>
+        </div>
+        <div class="setting-divider" aria-hidden="true"></div>
+        <div class="setting-row">
+          <div>
+            <span>Highlight finished tab</span>
+            <strong>Badge its favicon and title until opened</strong>
+          </div>
+          <label class="switch" title="Enable or disable tab highlighting">
+            <input id="tab-marker-enabled" type="checkbox" />
+            <span aria-hidden="true"></span>
+          </label>
+        </div>
+      </section>
+
+      <section class="sound-card" aria-label="Sound settings">
+        <div class="sound-heading">
+          <div>
+            <span>Custom chime</span>
+            <strong>Play when an alert fires</strong>
+          </div>
+          <label class="switch" title="Enable or disable the custom chime">
+            <input id="sound-enabled" type="checkbox" />
+            <span aria-hidden="true"></span>
+          </label>
+        </div>
+        <label class="volume-row" for="sound-volume">
+          <span>Volume</span>
+          <input id="sound-volume" type="range" min="0" max="100" step="1" />
+          <output id="sound-volume-value" for="sound-volume">70%</output>
+        </label>
+      </section>
+
+      <section class="event-card">
+        <span>Last automatic event</span>
+        <strong id="last-event">None yet</strong>
+        <small id="last-event-details">Send a new ChatGPT message to test detection.</small>
+      </section>
+
+      <div class="actions">
+        <button id="test-sound-button" type="button">Test sound</button>
+        <button id="test-button" class="secondary" type="button">Test notification</button>
+        <button id="refresh-button" class="secondary full-width" type="button">Refresh status</button>
+      </div>
+
+      <pre id="details" aria-live="polite">Desktop alerts, tab markers, and sound are enabled by default.</pre>
+
+      <p class="note">
+        Finished tabs receive a bright favicon and title prefix. The marker clears automatically when you open that tab.
+      </p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
