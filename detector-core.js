@@ -5,7 +5,7 @@
   }
   root.ChatGPTNotifierCore = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function detectorCoreFactory() {
-  function createDetector({ stableMs = 1400, fallbackStableMs = Math.max(4000, stableMs * 3) } = {}) {
+  function createDetector({ stableMs = 1400 } = {}) {
     let initialized = false;
     let generating = false;
     let awaitingResponse = false;
@@ -21,6 +21,14 @@
     let lastCompletedSignature = null;
     let lastSendVisible = false;
     let lastStopVisible = false;
+    let stopObserved = false;
+    let responseObserved = false;
+    let completionCandidateAt = null;
+    let manuallyStopped = false;
+    let lastAssistantKey = '';
+    let lastUserKey = '';
+    let errorObserved = false;
+    let restartArmed = true;
 
     function actionEvent(snapshot) {
       return {
@@ -35,7 +43,22 @@
       activityObserved = false;
       submissionBaselinePending = true;
       lastContentChangeAt = null;
+      stopObserved = false;
+      responseObserved = false;
+      completionCandidateAt = null;
+      lastCompletedSignature = null;
       lastSubmissionAt = Number.isFinite(timestamp) ? timestamp : Date.now();
+      manuallyStopped = false;
+      errorObserved = false;
+      restartArmed = true;
+    }
+
+    function markUserStopped() {
+      manuallyStopped = true;
+      awaitingResponse = false;
+      generating = false;
+      completionCandidateAt = null;
+      restartArmed = false;
     }
 
     function scan(snapshot) {
@@ -50,6 +73,8 @@
       const actionFingerprint = snapshot.actionFingerprint || null;
       const sendVisible = Boolean(snapshot.sendVisible);
       const stopVisible = Boolean(snapshot.stopVisible);
+      const assistantKey = snapshot.lastAssistantKey || '';
+      const userKey = snapshot.lastUserKey || '';
 
       if (!initialized) {
         initialized = true;
@@ -60,13 +85,26 @@
         lastActionFingerprint = actionFingerprint;
         lastSendVisible = sendVisible;
         lastStopVisible = stopVisible;
+        lastAssistantKey = assistantKey;
+        lastUserKey = userKey;
 
-        if (stopVisible || (awaitingResponse && !sendVisible)) {
+        if (stopVisible && !manuallyStopped && !snapshot.hasError) {
           awaitingResponse = true;
           generating = true;
           activityObserved = true;
           lastContentChangeAt = now;
+          responseObserved = Boolean(assistantText);
         }
+
+        if (snapshot.hasError && (awaitingResponse || stopVisible)) {
+          errorObserved = true;
+          awaitingResponse = false;
+          generating = false;
+          restartArmed = false;
+        }
+        if (!stopVisible) restartArmed = true;
+
+        stopObserved = stopVisible;
 
         if (actionFingerprint) {
           events.push(actionEvent(snapshot));
@@ -80,19 +118,36 @@
       }
       lastActionFingerprint = actionFingerprint;
 
-      const userAdded = userCount > lastUserCount;
-      const assistantAdded = assistantCount > lastAssistantCount;
+      const userAdded = userCount > lastUserCount || Boolean(userKey && userKey !== lastUserKey);
+      const assistantAdded = assistantCount > lastAssistantCount || Boolean(assistantKey && assistantKey !== lastAssistantKey);
       const assistantChanged = Boolean(assistantSignature) && assistantSignature !== lastAssistantSignature;
       const conversationChanged =
         Boolean(conversationSignature) && conversationSignature !== lastConversationSignature;
-      const hasAssistantSignal = assistantCount > 0 && Boolean(assistantSignature);
 
-      if (userAdded && !awaitingResponse) {
+      // A clicked Stop can remain in the DOM until React updates. Do not
+      // mistake that lingering control for the start of another generation.
+      const canRestart = !(manuallyStopped || errorObserved) || restartArmed;
+      if (userAdded && !awaitingResponse && canRestart) {
         markUserSubmitted(now);
       }
 
       const firstScanAfterSubmission = submissionBaselinePending;
       submissionBaselinePending = false;
+
+      if (stopVisible && !lastStopVisible && !awaitingResponse && canRestart) {
+        markUserSubmitted(now);
+      }
+      // A previous reply or a changing thinking/tool status is not a new reply.
+      if (awaitingResponse && (assistantAdded || assistantChanged) && assistantText) {
+        responseObserved = true;
+      }
+      if (awaitingResponse && stopVisible) stopObserved = true;
+      if (awaitingResponse && snapshot.hasError) {
+        errorObserved = true;
+        awaitingResponse = false;
+        generating = false;
+        restartArmed = false;
+      }
 
       const strongStartSignal =
         (stopVisible && !lastStopVisible) ||
@@ -100,8 +155,7 @@
         assistantAdded ||
         (assistantChanged && awaitingResponse);
 
-      if (strongStartSignal) {
-        if (stopVisible && !lastStopVisible) awaitingResponse = true;
+      if (awaitingResponse && strongStartSignal) {
         generating = true;
         activityObserved = true;
         lastContentChangeAt = now;
@@ -113,12 +167,18 @@
         lastContentChangeAt = now;
       }
 
-      const idleFor = lastContentChangeAt === null ? 0 : now - lastContentChangeAt;
-      const strongIdleSignal = !stopVisible && (sendVisible || hasAssistantSignal);
-      const stableLongEnough = strongIdleSignal
-        ? idleFor >= stableMs
-        : !stopVisible && idleFor >= fallbackStableMs;
-      const completionSignature = hasAssistantSignal ? assistantSignature : conversationSignature;
+      // The latest reply's action bar corroborates final output. Composer Send
+      // may be hidden when the input is empty and is not a completion signal.
+      const completionCandidate =
+        stopObserved && responseObserved && !stopVisible && Boolean(assistantText) &&
+        snapshot.finalReady === true && !snapshot.streamingVisible &&
+        !snapshot.hasError && !errorObserved && !actionFingerprint && !manuallyStopped;
+      if (!completionCandidate || assistantChanged || assistantAdded || userAdded) {
+        completionCandidateAt = null;
+      }
+      if (completionCandidate && completionCandidateAt === null) completionCandidateAt = now;
+      const stableLongEnough = completionCandidateAt !== null && now - completionCandidateAt >= stableMs;
+      const completionSignature = assistantSignature;
 
       if (
         generating &&
@@ -137,6 +197,9 @@
         activityObserved = false;
         lastCompletedSignature = completionSignature;
         lastContentChangeAt = null;
+        stopObserved = false;
+        responseObserved = false;
+        completionCandidateAt = null;
       }
 
       lastAssistantCount = assistantCount;
@@ -145,6 +208,9 @@
       lastConversationSignature = conversationSignature;
       lastSendVisible = sendVisible;
       lastStopVisible = stopVisible;
+      lastAssistantKey = assistantKey;
+      lastUserKey = userKey;
+      if (!stopVisible) restartArmed = true;
 
       return events;
     }
@@ -164,11 +230,19 @@
         lastSubmissionAt,
         lastActionFingerprint,
         lastSendVisible,
-        lastStopVisible
+        lastStopVisible,
+        stopObserved,
+        responseObserved,
+        completionCandidateAt,
+        manuallyStopped,
+        lastAssistantKey,
+        lastUserKey,
+        errorObserved,
+        restartArmed
       };
     }
 
-    return { scan, markUserSubmitted, getState };
+    return { scan, markUserSubmitted, markUserStopped, getState };
   }
 
   return { createDetector };

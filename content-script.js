@@ -35,7 +35,7 @@
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function contentFactory(detectorCore, domAdapter, tabMarkerModule) {
   const { createDetector } = detectorCore;
-  const { collectSnapshot, isComposerInput, isSendControl } = domAdapter;
+  const { collectSnapshot, isComposerInput, isSendControl, isStopControl } = domAdapter;
   const { createTabMarker } = tabMarkerModule;
 
   function createMonitor({
@@ -43,7 +43,6 @@
     windowObject,
     chromeObject,
     stableMs = 1400,
-    fallbackStableMs = 4500,
     now = () => Date.now(),
     setTimeoutFn = setTimeout,
     clearTimeoutFn = clearTimeout,
@@ -52,7 +51,7 @@
     MutationObserverClass,
     tabMarker = null
   }) {
-    let detector = createDetector({ stableMs, fallbackStableMs });
+    let detector = createDetector({ stableMs });
     let currentUrl = windowObject.location.href;
     let observer = null;
     let immediateTimer = null;
@@ -68,7 +67,7 @@
     function resetForRoute(url) {
       const submissionTimestamp = lastSubmissionAt;
       currentUrl = url;
-      detector = createDetector({ stableMs, fallbackStableMs });
+      detector = createDetector({ stableMs });
       if (now() - submissionTimestamp <= 10000) {
         detector.markUserSubmitted(submissionTimestamp);
       } else {
@@ -146,6 +145,13 @@
 
     function clickListener(event) {
       const control = event?.target?.closest?.('button,[role="button"]') || event?.target;
+      if (isStopControl(control)) {
+        detector.markUserStopped();
+        lastSubmissionAt = -Infinity;
+        lastScanReason = 'user-stopped';
+        scheduleScan('user-stopped');
+        return;
+      }
       if (isSendControl(control)) markSubmission('click');
     }
 
@@ -184,7 +190,7 @@
       if (message?.type !== 'CHATGPT_NOTIFIER_PING') return false;
       sendResponse({
         ok: true,
-        version: '0.8.0',
+        version: '0.8.1',
         url: windowObject.location.href,
         title: documentObject.title || 'ChatGPT',
         state: detector.getState(),
@@ -217,7 +223,10 @@
           'aria-disabled',
           'disabled',
           'data-message-author-role',
-          'data-testid'
+          'data-testid',
+          'class', 'style', 'hidden', 'aria-hidden', 'aria-busy',
+          'data-is-streaming', 'data-streaming', 'data-turn', 'data-turn-key',
+          'data-message-id', 'data-chatgpt-agent-turn-start', 'data-chatgpt-search-message-ids'
         ]
       });
 
@@ -244,7 +253,7 @@
 
     function getDebug() {
       return {
-        version: '0.8.0',
+        version: '0.8.1',
         url: windowObject.location.href,
         title: documentObject.title || 'ChatGPT',
         state: detector.getState(),

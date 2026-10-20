@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { collectSnapshot } = require('../dom-adapter.js');
 
 function fakeDocument(assistantNode) {
+  assistantNode.getAttribute = (name) => name === 'data-message-author-role' ? 'assistant' : null;
   const root = {
     innerText: 'User prompt Complete assistant response',
     textContent: 'User prompt Complete assistant response'
@@ -13,8 +14,8 @@ function fakeDocument(assistantNode) {
       return selector === 'main' ? root : null;
     },
     querySelectorAll(selector) {
-      if (selector === '[data-message-author-role="assistant"]') return [assistantNode];
-      if (selector === '[data-message-author-role="user"]') return [{}];
+      if (selector.startsWith('[data-message-author-role="assistant"]')) return [assistantNode];
+      if (selector.startsWith('[data-message-author-role="user"]')) return [];
       if (selector === 'button,[role="button"]') return [];
       return [];
     }
