@@ -28,6 +28,7 @@
     let lastAssistantKey = '';
     let lastUserKey = '';
     let errorObserved = false;
+    let restartArmed = true;
 
     function actionEvent(snapshot) {
       return {
@@ -49,6 +50,7 @@
       lastSubmissionAt = Number.isFinite(timestamp) ? timestamp : Date.now();
       manuallyStopped = false;
       errorObserved = false;
+      restartArmed = true;
     }
 
     function markUserStopped() {
@@ -56,6 +58,7 @@
       awaitingResponse = false;
       generating = false;
       completionCandidateAt = null;
+      restartArmed = false;
     }
 
     function scan(snapshot) {
@@ -85,12 +88,21 @@
         lastAssistantKey = assistantKey;
         lastUserKey = userKey;
 
-        if (stopVisible || (awaitingResponse && !sendVisible)) {
+        if (stopVisible && !manuallyStopped && !snapshot.hasError) {
           awaitingResponse = true;
           generating = true;
           activityObserved = true;
           lastContentChangeAt = now;
+          responseObserved = Boolean(assistantText);
         }
+
+        if (snapshot.hasError && (awaitingResponse || stopVisible)) {
+          errorObserved = true;
+          awaitingResponse = false;
+          generating = false;
+          restartArmed = false;
+        }
+        if (!stopVisible) restartArmed = true;
 
         stopObserved = stopVisible;
 
@@ -112,14 +124,17 @@
       const conversationChanged =
         Boolean(conversationSignature) && conversationSignature !== lastConversationSignature;
 
-      if (userAdded && !awaitingResponse) {
+      // A clicked Stop can remain in the DOM until React updates. Do not
+      // mistake that lingering control for the start of another generation.
+      const canRestart = !(manuallyStopped || errorObserved) || restartArmed;
+      if (userAdded && !awaitingResponse && canRestart) {
         markUserSubmitted(now);
       }
 
       const firstScanAfterSubmission = submissionBaselinePending;
       submissionBaselinePending = false;
 
-      if (stopVisible && !lastStopVisible && !awaitingResponse) {
+      if (stopVisible && !lastStopVisible && !awaitingResponse && canRestart) {
         markUserSubmitted(now);
       }
       // A previous reply or a changing thinking/tool status is not a new reply.
@@ -131,6 +146,7 @@
         errorObserved = true;
         awaitingResponse = false;
         generating = false;
+        restartArmed = false;
       }
 
       const strongStartSignal =
@@ -139,8 +155,7 @@
         assistantAdded ||
         (assistantChanged && awaitingResponse);
 
-      if (strongStartSignal) {
-        if (stopVisible && !lastStopVisible) awaitingResponse = true;
+      if (awaitingResponse && strongStartSignal) {
         generating = true;
         activityObserved = true;
         lastContentChangeAt = now;
@@ -195,6 +210,7 @@
       lastStopVisible = stopVisible;
       lastAssistantKey = assistantKey;
       lastUserKey = userKey;
+      if (!stopVisible) restartArmed = true;
 
       return events;
     }
@@ -221,7 +237,8 @@
         manuallyStopped,
         lastAssistantKey,
         lastUserKey,
-        errorObserved
+        errorObserved,
+        restartArmed
       };
     }
 

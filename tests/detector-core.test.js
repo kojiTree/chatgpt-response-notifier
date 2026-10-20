@@ -189,3 +189,42 @@ test('typing in the composer or unrelated page updates do not postpone a final r
   scan(1000, { conversationSignature: 'composer draft 1' });
   assert.equal(scan(1600, { conversationSignature: 'composer draft 2' })[0]?.type, 'response_complete');
 });
+
+test('Stop before the first generation scan cannot be undone by the lingering Stop button', () => {
+  const { detector, scan } = session();
+  detector.markUserSubmitted(10);
+  detector.markUserStopped();
+  scan(100, { ...reply, userCount: 2, stopVisible: true, sendVisible: false });
+  assert.equal(detector.getState().manuallyStopped, true);
+  scan(200, { stopVisible: false, sendVisible: true });
+  assert.deepEqual(scan(1600), []);
+  // A later, distinct Stop appearance can represent an explicit retry.
+  scan(2000, { stopVisible: true, lastAssistantSignature: 'retry', lastAssistantText: 'Retry reply' });
+  scan(2100, { stopVisible: false });
+  assert.equal(scan(3500)[0]?.message, 'Retry reply');
+});
+
+test('Stop before initialization also suppresses lingering generation controls', () => {
+  const detector = createDetector();
+  detector.markUserStopped();
+  detector.scan({ now: 0, ...reply, stopVisible: true });
+  detector.scan({ now: 100, ...reply, stopVisible: false });
+  assert.deepEqual(detector.scan({ now: 1500, ...reply, stopVisible: false }), []);
+});
+
+test('attaching during generation accepts existing text when it later finalizes without more tokens', () => {
+  const detector = createDetector();
+  detector.scan({ now: 0, ...reply, stopVisible: true, finalReady: false });
+  assert.deepEqual(detector.scan({ now: 100, ...reply, stopVisible: false }), []);
+  assert.equal(detector.scan({ now: 1500, ...reply, stopVisible: false })[0]?.type, 'response_complete');
+});
+
+test('an error on the first Stop scan cannot rearm while the old Stop remains', () => {
+  const { detector, scan } = session();
+  detector.markUserSubmitted(10);
+  scan(100, { ...reply, stopVisible: true, hasError: true });
+  assert.equal(detector.getState().awaitingResponse, false);
+  scan(200, { hasError: false });
+  scan(300, { stopVisible: false });
+  assert.deepEqual(scan(10000), []);
+});
