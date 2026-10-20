@@ -22,7 +22,7 @@ function session(initial = {}) {
 
 const reply = {
   assistantCount: 2, lastAssistantSignature: 'new', lastAssistantText: 'New reply',
-  conversationSignature: 'new conversation'
+  conversationSignature: 'new conversation', finalReady: true
 };
 
 test('submission and thinking status changes cannot complete the previous reply', () => {
@@ -112,4 +112,80 @@ test('two separate turns with identical replies can both notify', () => {
   scan(2100, { assistantCount: 3, userCount: 3, stopVisible: true, sendVisible: false });
   scan(2200, { stopVisible: false, sendVisible: true });
   assert.equal(scan(3600)[0]?.type, 'response_complete');
+});
+
+test('a final reply completes with an empty composer and no Send control', () => {
+  const { detector, scan } = session();
+  detector.markUserSubmitted(10);
+  scan(100, { ...reply, stopVisible: true, sendVisible: false });
+  scan(200, { stopVisible: false });
+  assert.equal(scan(1600)[0]?.type, 'response_complete');
+});
+
+test('commentary without final controls never completes even during a long tool gap', () => {
+  const { detector, scan } = session();
+  detector.markUserSubmitted(10);
+  scan(100, { ...reply, finalReady: false, stopVisible: true, sendVisible: false });
+  scan(200, { stopVisible: false });
+  assert.deepEqual(scan(60000), []);
+  scan(60100, { finalReady: true });
+  assert.equal(scan(61500)[0]?.type, 'response_complete');
+});
+
+test('manual Stop suppresses completion until the next submission', () => {
+  const { detector, scan } = session();
+  detector.markUserSubmitted(10);
+  scan(100, { ...reply, stopVisible: true, sendVisible: false });
+  detector.markUserStopped();
+  scan(200, { stopVisible: false, sendVisible: true });
+  assert.deepEqual(scan(60000), []);
+  detector.markUserSubmitted(61000);
+  scan(61100, { ...reply, assistantCount: 3, stopVisible: true });
+  scan(61200, { stopVisible: false });
+  assert.equal(scan(62600)[0]?.type, 'response_complete');
+});
+
+for (const blocker of ['streamingVisible']) {
+  test(`${blocker} blocks completion and restarts stabilization when cleared`, () => {
+    const { detector, scan } = session();
+    detector.markUserSubmitted(10);
+    scan(100, { ...reply, stopVisible: true });
+    scan(200, { stopVisible: false, [blocker]: true });
+    assert.deepEqual(scan(60000), []);
+    scan(60100, { [blocker]: false });
+    assert.deepEqual(scan(61000), []);
+    assert.equal(scan(61500)[0]?.type, 'response_complete');
+  });
+}
+
+test('approval waiting cannot also produce a completion event', () => {
+  const { detector, scan } = session();
+  detector.markUserSubmitted(10);
+  scan(100, { ...reply, stopVisible: true });
+  assert.deepEqual(scan(200, { stopVisible: false, actionFingerprint: 'allow' }).map(e => e.type), ['action_required']);
+  assert.deepEqual(scan(60000), []);
+});
+
+
+test('an error cannot become a completed reply just because its banner is dismissed', () => {
+  const { detector, scan } = session();
+  detector.markUserSubmitted(10);
+  scan(100, { ...reply, stopVisible: true });
+  scan(200, { stopVisible: false, hasError: true });
+  scan(300, { hasError: false });
+  assert.deepEqual(scan(60000), []);
+  assert.equal(detector.getState().errorObserved, true);
+  // Retry/regenerate can begin a fresh cycle without a new user turn.
+  scan(60100, { stopVisible: true });
+  scan(60200, { ...reply, lastAssistantSignature: 'retry', stopVisible: false });
+  assert.equal(scan(61600)[0]?.type, 'response_complete');
+});
+
+test('typing in the composer or unrelated page updates do not postpone a final reply', () => {
+  const { detector, scan } = session();
+  detector.markUserSubmitted(10);
+  scan(100, { ...reply, stopVisible: true });
+  scan(200, { stopVisible: false });
+  scan(1000, { conversationSignature: 'composer draft 1' });
+  assert.equal(scan(1600, { conversationSignature: 'composer draft 2' })[0]?.type, 'response_complete');
 });

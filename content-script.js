@@ -35,7 +35,7 @@
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function contentFactory(detectorCore, domAdapter, tabMarkerModule) {
   const { createDetector } = detectorCore;
-  const { collectSnapshot, isComposerInput, isSendControl } = domAdapter;
+  const { collectSnapshot, isComposerInput, isSendControl, isStopControl } = domAdapter;
   const { createTabMarker } = tabMarkerModule;
 
   function createMonitor({
@@ -145,6 +145,13 @@
 
     function clickListener(event) {
       const control = event?.target?.closest?.('button,[role="button"]') || event?.target;
+      if (isStopControl(control)) {
+        detector.markUserStopped();
+        lastSubmissionAt = -Infinity;
+        lastScanReason = 'user-stopped';
+        scheduleScan('user-stopped');
+        return;
+      }
       if (isSendControl(control)) markSubmission('click');
     }
 
@@ -216,7 +223,10 @@
           'aria-disabled',
           'disabled',
           'data-message-author-role',
-          'data-testid'
+          'data-testid',
+          'class', 'style', 'hidden', 'aria-hidden', 'aria-busy',
+          'data-is-streaming', 'data-streaming', 'data-turn', 'data-turn-key',
+          'data-message-id', 'data-chatgpt-agent-turn-start', 'data-chatgpt-search-message-ids'
         ]
       });
 

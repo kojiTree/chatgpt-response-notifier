@@ -1,0 +1,7 @@
+{
+  "name": "chatgpt-response-notifier",
+  "version": "0.8.1",
+  "private": true,
+  "scripts": { "test": "node --test tests/*.test.js" },
+  "devDependencies": { "jsdom": "26.1.0" }
+}

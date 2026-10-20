@@ -24,6 +24,10 @@
     let stopObserved = false;
     let responseObserved = false;
     let completionCandidateAt = null;
+    let manuallyStopped = false;
+    let lastAssistantKey = '';
+    let lastUserKey = '';
+    let errorObserved = false;
 
     function actionEvent(snapshot) {
       return {
@@ -43,6 +47,15 @@
       completionCandidateAt = null;
       lastCompletedSignature = null;
       lastSubmissionAt = Number.isFinite(timestamp) ? timestamp : Date.now();
+      manuallyStopped = false;
+      errorObserved = false;
+    }
+
+    function markUserStopped() {
+      manuallyStopped = true;
+      awaitingResponse = false;
+      generating = false;
+      completionCandidateAt = null;
     }
 
     function scan(snapshot) {
@@ -57,6 +70,8 @@
       const actionFingerprint = snapshot.actionFingerprint || null;
       const sendVisible = Boolean(snapshot.sendVisible);
       const stopVisible = Boolean(snapshot.stopVisible);
+      const assistantKey = snapshot.lastAssistantKey || '';
+      const userKey = snapshot.lastUserKey || '';
 
       if (!initialized) {
         initialized = true;
@@ -67,6 +82,8 @@
         lastActionFingerprint = actionFingerprint;
         lastSendVisible = sendVisible;
         lastStopVisible = stopVisible;
+        lastAssistantKey = assistantKey;
+        lastUserKey = userKey;
 
         if (stopVisible || (awaitingResponse && !sendVisible)) {
           awaitingResponse = true;
@@ -89,8 +106,8 @@
       }
       lastActionFingerprint = actionFingerprint;
 
-      const userAdded = userCount > lastUserCount;
-      const assistantAdded = assistantCount > lastAssistantCount;
+      const userAdded = userCount > lastUserCount || Boolean(userKey && userKey !== lastUserKey);
+      const assistantAdded = assistantCount > lastAssistantCount || Boolean(assistantKey && assistantKey !== lastAssistantKey);
       const assistantChanged = Boolean(assistantSignature) && assistantSignature !== lastAssistantSignature;
       const conversationChanged =
         Boolean(conversationSignature) && conversationSignature !== lastConversationSignature;
@@ -110,6 +127,11 @@
         responseObserved = true;
       }
       if (awaitingResponse && stopVisible) stopObserved = true;
+      if (awaitingResponse && snapshot.hasError) {
+        errorObserved = true;
+        awaitingResponse = false;
+        generating = false;
+      }
 
       const strongStartSignal =
         (stopVisible && !lastStopVisible) ||
@@ -130,12 +152,13 @@
         lastContentChangeAt = now;
       }
 
-      // Silence alone cannot distinguish completion from thinking, a tool call,
-      // or a stalled connection. Require an observed generation cycle and new
-      // assistant content, then debounce the return of the send control.
+      // The latest reply's action bar corroborates final output. Composer Send
+      // may be hidden when the input is empty and is not a completion signal.
       const completionCandidate =
-        stopObserved && responseObserved && !stopVisible && sendVisible && Boolean(assistantText);
-      if (!completionCandidate || conversationChanged || assistantChanged) {
+        stopObserved && responseObserved && !stopVisible && Boolean(assistantText) &&
+        snapshot.finalReady === true && !snapshot.streamingVisible &&
+        !snapshot.hasError && !errorObserved && !actionFingerprint && !manuallyStopped;
+      if (!completionCandidate || assistantChanged || assistantAdded || userAdded) {
         completionCandidateAt = null;
       }
       if (completionCandidate && completionCandidateAt === null) completionCandidateAt = now;
@@ -170,6 +193,8 @@
       lastConversationSignature = conversationSignature;
       lastSendVisible = sendVisible;
       lastStopVisible = stopVisible;
+      lastAssistantKey = assistantKey;
+      lastUserKey = userKey;
 
       return events;
     }
@@ -192,11 +217,15 @@
         lastStopVisible,
         stopObserved,
         responseObserved,
-        completionCandidateAt
+        completionCandidateAt,
+        manuallyStopped,
+        lastAssistantKey,
+        lastUserKey,
+        errorObserved
       };
     }
 
-    return { scan, markUserSubmitted, getState };
+    return { scan, markUserSubmitted, markUserStopped, getState };
   }
 
   return { createDetector };
