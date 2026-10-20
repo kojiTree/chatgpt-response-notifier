@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Response Notifier",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Notifies you with desktop alerts, an optional chime, and a persistent tab marker when ChatGPT finishes a response or needs approval.",
   "minimum_chrome_version": "116",
   "permissions": [

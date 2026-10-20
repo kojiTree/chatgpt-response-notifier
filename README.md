@@ -32,4 +32,18 @@ Open the extension popup to enable or disable desktop alerts, tab highlighting, 
 
 ## Version
 
-Current manifest version: **0.8.0**.
+Current manifest version: **0.8.1**.
+
+## Completion detection
+
+Completion requires new assistant content, an observed Stop control during the
+response, and a stable return to the Send control. A quiet page or an old reply
+alone does not count as completion. Thinking and tool status changes are not
+sufficient evidence of a response.
+
+If a ChatGPT UI change prevents the extension from recognizing these controls,
+it skips completion notifications instead of guessing from a timeout. Real-site
+verification is still needed after UI changes; popup diagnostics expose
+`stopObserved`, `responseObserved`, and the latest snapshot for troubleshooting.
+
+Run regression tests with `node --test tests/*.test.js`.

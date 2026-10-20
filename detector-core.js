@@ -5,7 +5,7 @@
   }
   root.ChatGPTNotifierCore = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function detectorCoreFactory() {
-  function createDetector({ stableMs = 1400, fallbackStableMs = Math.max(4000, stableMs * 3) } = {}) {
+  function createDetector({ stableMs = 1400 } = {}) {
     let initialized = false;
     let generating = false;
     let awaitingResponse = false;
@@ -21,6 +21,9 @@
     let lastCompletedSignature = null;
     let lastSendVisible = false;
     let lastStopVisible = false;
+    let stopObserved = false;
+    let responseObserved = false;
+    let completionCandidateAt = null;
 
     function actionEvent(snapshot) {
       return {
@@ -35,6 +38,10 @@
       activityObserved = false;
       submissionBaselinePending = true;
       lastContentChangeAt = null;
+      stopObserved = false;
+      responseObserved = false;
+      completionCandidateAt = null;
+      lastCompletedSignature = null;
       lastSubmissionAt = Number.isFinite(timestamp) ? timestamp : Date.now();
     }
 
@@ -68,6 +75,8 @@
           lastContentChangeAt = now;
         }
 
+        stopObserved = stopVisible;
+
         if (actionFingerprint) {
           events.push(actionEvent(snapshot));
         }
@@ -85,7 +94,6 @@
       const assistantChanged = Boolean(assistantSignature) && assistantSignature !== lastAssistantSignature;
       const conversationChanged =
         Boolean(conversationSignature) && conversationSignature !== lastConversationSignature;
-      const hasAssistantSignal = assistantCount > 0 && Boolean(assistantSignature);
 
       if (userAdded && !awaitingResponse) {
         markUserSubmitted(now);
@@ -93,6 +101,15 @@
 
       const firstScanAfterSubmission = submissionBaselinePending;
       submissionBaselinePending = false;
+
+      if (stopVisible && !lastStopVisible && !awaitingResponse) {
+        markUserSubmitted(now);
+      }
+      // A previous reply or a changing thinking/tool status is not a new reply.
+      if (awaitingResponse && (assistantAdded || assistantChanged) && assistantText) {
+        responseObserved = true;
+      }
+      if (awaitingResponse && stopVisible) stopObserved = true;
 
       const strongStartSignal =
         (stopVisible && !lastStopVisible) ||
@@ -113,12 +130,17 @@
         lastContentChangeAt = now;
       }
 
-      const idleFor = lastContentChangeAt === null ? 0 : now - lastContentChangeAt;
-      const strongIdleSignal = !stopVisible && (sendVisible || hasAssistantSignal);
-      const stableLongEnough = strongIdleSignal
-        ? idleFor >= stableMs
-        : !stopVisible && idleFor >= fallbackStableMs;
-      const completionSignature = hasAssistantSignal ? assistantSignature : conversationSignature;
+      // Silence alone cannot distinguish completion from thinking, a tool call,
+      // or a stalled connection. Require an observed generation cycle and new
+      // assistant content, then debounce the return of the send control.
+      const completionCandidate =
+        stopObserved && responseObserved && !stopVisible && sendVisible && Boolean(assistantText);
+      if (!completionCandidate || conversationChanged || assistantChanged) {
+        completionCandidateAt = null;
+      }
+      if (completionCandidate && completionCandidateAt === null) completionCandidateAt = now;
+      const stableLongEnough = completionCandidateAt !== null && now - completionCandidateAt >= stableMs;
+      const completionSignature = assistantSignature;
 
       if (
         generating &&
@@ -137,6 +159,9 @@
         activityObserved = false;
         lastCompletedSignature = completionSignature;
         lastContentChangeAt = null;
+        stopObserved = false;
+        responseObserved = false;
+        completionCandidateAt = null;
       }
 
       lastAssistantCount = assistantCount;
@@ -164,7 +189,10 @@
         lastSubmissionAt,
         lastActionFingerprint,
         lastSendVisible,
-        lastStopVisible
+        lastStopVisible,
+        stopObserved,
+        responseObserved,
+        completionCandidateAt
       };
     }
 

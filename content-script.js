@@ -43,7 +43,6 @@
     windowObject,
     chromeObject,
     stableMs = 1400,
-    fallbackStableMs = 4500,
     now = () => Date.now(),
     setTimeoutFn = setTimeout,
     clearTimeoutFn = clearTimeout,
@@ -52,7 +51,7 @@
     MutationObserverClass,
     tabMarker = null
   }) {
-    let detector = createDetector({ stableMs, fallbackStableMs });
+    let detector = createDetector({ stableMs });
     let currentUrl = windowObject.location.href;
     let observer = null;
     let immediateTimer = null;
@@ -68,7 +67,7 @@
     function resetForRoute(url) {
       const submissionTimestamp = lastSubmissionAt;
       currentUrl = url;
-      detector = createDetector({ stableMs, fallbackStableMs });
+      detector = createDetector({ stableMs });
       if (now() - submissionTimestamp <= 10000) {
         detector.markUserSubmitted(submissionTimestamp);
       } else {
@@ -184,7 +183,7 @@
       if (message?.type !== 'CHATGPT_NOTIFIER_PING') return false;
       sendResponse({
         ok: true,
-        version: '0.8.0',
+        version: '0.8.1',
         url: windowObject.location.href,
         title: documentObject.title || 'ChatGPT',
         state: detector.getState(),
@@ -244,7 +243,7 @@
 
     function getDebug() {
       return {
-        version: '0.8.0',
+        version: '0.8.1',
         url: windowObject.location.href,
         title: documentObject.title || 'ChatGPT',
         state: detector.getState(),
